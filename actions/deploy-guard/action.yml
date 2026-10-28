@@ -1,0 +1,34 @@
+name: Deploy guard
+description: First job of every deploy workflow, on a hosted runner. Fails unless the run is a push or dispatch on an allowed branch, then computes the immutable image tag. Makes no API calls.
+
+inputs:
+  branches:
+    description: "Branches that may deploy, newline or space separated bash case globs, for example master or release/*."
+    required: true
+  tag-prefix:
+    description: "Prefix of the tag output, empty for production, dev- for the dev environment."
+    required: false
+    default: ""
+
+outputs:
+  ref:
+    description: Full commit sha of the run.
+    value: ${{ steps.guard.outputs.ref }}
+  sha7:
+    description: First 7 characters of ref.
+    value: ${{ steps.guard.outputs.sha7 }}
+  tag:
+    description: The image tag, tag-prefix followed by sha7.
+    value: ${{ steps.guard.outputs.tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Guard deploy
+      id: guard
+      shell: bash
+      env:
+        INPUT_BRANCHES: ${{ inputs.branches }}
+        INPUT_TAG_PREFIX: ${{ inputs.tag-prefix }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/../../scripts/guard.sh"

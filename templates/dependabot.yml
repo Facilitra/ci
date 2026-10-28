@@ -1,0 +1,20 @@
+# Copy to .github/dependabot.yml. Only GitHub Actions are managed here: this is how a new
+# Facilitra/ci release (and every other pinned action) reaches the repository, as one
+# grouped pull request that a person reviews and merges.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/gate
+    # Where a dev environment exists, bumps land on the dev branch first, because merging
+    # into the production branch is a production deploy. Remove the line otherwise.
+    target-branch: develop
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"

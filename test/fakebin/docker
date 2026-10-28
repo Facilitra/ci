@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Fake docker for test/cases. Never talks to a daemon.
+# Every call appends "docker <args...>" to $FAKE_LOG and writes its arguments,
+# NUL-separated, to a new file in $FAKE_DIR/argv/ so tests can check argument
+# boundaries. Canned behaviour comes from files in $FAKE_DIR (default $TMP/fake):
+#   docker-ps.out   stdout of "docker ps --format ..." (container names)
+#   fail-on         one substring per line; a "buildx build" whose arguments
+#                   contain one exits 1
+#   hang-on         same, but the build sleeps (so a watchdog has to kill it)
+#   rendezvous      "N SUBSTRING": every "buildx build" whose arguments contain
+#                   SUBSTRING waits until N such builds are running at once
+#                   (proves they run in parallel)
+# "buildx build" also records HARBOR_BUILD_SECRET and BUILD_WATCHDOG_DEADLINE
+# as seen in its environment to $FAKE_DIR/build-env.
+set -euo pipefail
+
+fake_dir="${FAKE_DIR:-${TMP:-/tmp}/fake}"
+mkdir -p "$fake_dir/argv"
+if [[ -n "${FAKE_LOG:-}" ]]; then
+  echo "docker $*" >>"$FAKE_LOG"
+fi
+f="$(mktemp "$fake_dir/argv/XXXXXX")"
+printf '%s\0' "$@" >"$f"
+
+matches() { # matches FILE ARGS...: any line of FILE is a substring of the arguments
+  local file="$1" line
+  shift
+  [[ -f "$file" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ -n "$line" && "$*" == *"$line"* ]]; then return 0; fi
+  done <"$file"
+  return 1
+}
+
+case "${1:-} ${2:-}" in
+  "buildx build")
+    printf 'HARBOR_BUILD_SECRET=%s BUILD_WATCHDOG_DEADLINE=%s\n' \
+      "${HARBOR_BUILD_SECRET-UNSET}" "${BUILD_WATCHDOG_DEADLINE-UNSET}" >>"$fake_dir/build-env"
+    if [[ -f "$fake_dir/rendezvous" ]]; then
+      read -r want pat <"$fake_dir/rendezvous"
+      if [[ "$*" == *"$pat"* ]]; then
+        mkdir -p "$fake_dir/running"
+        : >"$fake_dir/running/$$"
+        have=0
+        for _ in $(seq 1 100); do
+          have="$(find "$fake_dir/running" -type f | wc -l)"
+          if [[ "$have" -ge "$want" ]]; then break; fi
+          sleep 0.2
+        done
+        if [[ "$have" -lt "$want" ]]; then
+          echo "fake docker: builds did not overlap (wanted $want at once)" >&2
+          exit 1
+        fi
+      fi
+    fi
+    if matches "$fake_dir/hang-on" "$@"; then
+      echo "$$" >"$fake_dir/hung.pid"
+      echo "fake docker: hanging"
+      exec sleep 300
+    fi
+    if matches "$fake_dir/fail-on" "$@"; then
+      echo "fake docker: build failed" >&2
+      exit 1
+    fi
+    echo "fake docker: pushed"
+    ;;
+  "ps --format")
+    if [[ -f "$fake_dir/docker-ps.out" ]]; then cat "$fake_dir/docker-ps.out"; fi
+    ;;
+  "exec "*) echo "fake docker exec output" ;;
+  "logs "*) echo "fake docker logs output" ;;
+esac
+exit 0

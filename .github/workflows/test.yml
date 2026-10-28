@@ -1,0 +1,28 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Syntax-check every script
+        run: |
+          set -euo pipefail
+          for f in scripts/*.sh test/*.sh test/cases/*.sh test/fakebin/*; do
+            bash -n "$f"
+          done
+
+      - name: Run the tests
+        run: bash test/run.sh

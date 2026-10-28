@@ -1,0 +1,21 @@
+name: k8s-setup
+description: Install a pinned, sha256-verified kubectl (linux/amd64) from dl.k8s.io and put it on PATH.
+inputs:
+  kubectl-version:
+    description: kubectl release, for example v1.31.4. Fails while RECORD-FIRST.
+    required: false
+    default: RECORD-FIRST
+  kubectl-sha256:
+    description: sha256 of that release's linux/amd64 kubectl binary. Fails while RECORD-FIRST.
+    required: false
+    default: RECORD-FIRST
+runs:
+  using: composite
+  steps:
+    - name: Install kubectl
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_KUBECTL_VERSION: ${{ inputs.kubectl-version }}
+        INPUT_KUBECTL_SHA256: ${{ inputs.kubectl-sha256 }}
+      run: bash "$ACTION_PATH/../../scripts/kubectl-install.sh"

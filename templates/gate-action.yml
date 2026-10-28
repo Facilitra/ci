@@ -1,0 +1,19 @@
+# Local composite action: copy to .github/actions/gate/action.yml. The quality gate lives
+# here once and is used by ci.yml and by every deploy workflow, so the pull-request check
+# and the deploy check cannot drift apart. Replace the three commands with the repository's
+# own scripts (use `npm run` instead of `pnpm run` in an npm repository).
+name: gate
+description: Install, lint, typecheck and test. Used by the pull-request and the deploy workflows.
+runs:
+  using: composite
+  steps:
+    - uses: Facilitra/ci/actions/node-setup@FACILITRA_CI_SHA # v1.0.0
+    - name: Lint
+      shell: bash
+      run: pnpm run lint
+    - name: Typecheck
+      shell: bash
+      run: pnpm run typecheck
+    - name: Test
+      shell: bash
+      run: pnpm run test

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Fake gh for the tests (release-gate). Appends "gh <args...>" to $FAKE_LOG and
+# answers from canned files in $FAKE_DIR (default $TMP/fake). The canned text is
+# what the script's --jq filter would have printed, so --jq itself is not run.
+# The environment gh was called with is appended to $FAKE_DIR/gh-env.
+#
+#   gh api repos/O/R/commits/refs/tags/<tag>  api-commit  (the tagged commit sha)
+#   gh api repos/O/R/branches/<b>     api-branch          (branch head sha)
+#   gh api repos/O/R/compare/<a>...<b> api-compare        (identical|ahead|behind|diverged)
+#   gh api repos/O/R                  api-default-branch
+#   gh run list ...                   run-list.<n> for the n-th call, else run-list
+#                                     (the run id; missing or empty = no run yet)
+#   gh run watch <id> ...             run-watch-rc (exit code, default 0)
+# A file <name>-rc next to a canned file makes that call print nothing and exit
+# with that code. A canned file that is missing for an api call is a test bug.
+set -u
+fake_dir="${FAKE_DIR:-${TMP:-/tmp}/fake}"
+mkdir -p "$fake_dir"
+
+if [[ -n "${FAKE_LOG:-}" ]]; then
+  echo "gh $*" >> "$FAKE_LOG"
+fi
+echo "GH_TOKEN=${GH_TOKEN-UNSET} GH_REPO=${GH_REPO-UNSET}" >> "$fake_dir/gh-env"
+
+canned() { # NAME: print the canned file, or fail like gh would
+  if [[ -f "$fake_dir/$1-rc" ]]; then
+    echo "gh: fake failure for $1" >&2
+    exit "$(tr -d '[:space:]' < "$fake_dir/$1-rc")"
+  fi
+  if [[ ! -f "$fake_dir/$1" ]]; then
+    echo "fake gh: no canned file $1 in $fake_dir" >&2
+    exit 99
+  fi
+  cat "$fake_dir/$1"
+}
+
+case "${1:-} ${2:-}" in
+  "api repos/"*)
+    case "$2" in
+      repos/*/commits/*) canned api-commit ;;
+      repos/*/branches/*) canned api-branch ;;
+      repos/*/compare/*) canned api-compare ;;
+      repos/*) canned api-default-branch ;;
+    esac
+    ;;
+  "run list")
+    n=0
+    [[ -f "$fake_dir/.run-list-calls" ]] && n="$(cat "$fake_dir/.run-list-calls")"
+    n=$((n + 1))
+    echo "$n" > "$fake_dir/.run-list-calls"
+    if [[ -f "$fake_dir/run-list-rc" ]]; then
+      echo "gh: fake failure for run list" >&2
+      exit "$(tr -d '[:space:]' < "$fake_dir/run-list-rc")"
+    fi
+    if [[ -f "$fake_dir/run-list.$n" ]]; then
+      cat "$fake_dir/run-list.$n"
+    elif [[ -f "$fake_dir/run-list" ]]; then
+      cat "$fake_dir/run-list"
+    fi
+    ;;
+  "run watch")
+    rc=0
+    [[ -f "$fake_dir/run-watch-rc" ]] && rc="$(tr -d '[:space:]' < "$fake_dir/run-watch-rc")"
+    echo "fake gh: watched run ${3:-}"
+    exit "$rc"
+    ;;
+  *)
+    echo "fake gh: unsupported call: $*" >&2
+    exit 98
+    ;;
+esac

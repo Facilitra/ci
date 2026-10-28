@@ -1,0 +1,63 @@
+# Pull-request CI for a service: copy to .github/workflows/ci.yml. Everything runs on
+# hosted runners; nothing here may use the runner label of the deploy jobs. FACILITRA_CI_SHA is the
+# 40-hex commit of a Facilitra/ci release.
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/gate
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Facilitra/ci/actions/osv-scan@FACILITRA_CI_SHA # v1.0.0
+
+  # Optional: prove the image still builds, without pushing and without secrets.
+  # build-check:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 20
+  #   steps:
+  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  #       with:
+  #         persist-credentials: false
+  #     - run: docker build --file Dockerfile --target final .
+
+  # The one required status check. Skipped jobs count as passed; failed or cancelled do not.
+  # Never require the inner job names.
+  ci:
+    if: always()
+    needs: [quality, audit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every job must have passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*)
+              echo "::error::job results: $RESULTS"
+              exit 1
+              ;;
+          esac

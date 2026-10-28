@@ -1,0 +1,27 @@
+name: k8s-pin
+description: Pin image tags in the checked-out manifests to the tag built for this run, with positive and negative assertions.
+inputs:
+  files:
+    description: Manifest files or directories (directories are read one level deep), one per line.
+    required: true
+  images:
+    description: Repository paths without host, for example example/app, one per line.
+    required: true
+  from:
+    description: The literal tag currently committed in the manifests, for example latest, dev-latest or ${GIT_SHA}.
+    required: true
+  to:
+    description: The tag to write, normally the tag output of deploy-guard.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Pin image tags
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_FILES: ${{ inputs.files }}
+        INPUT_IMAGES: ${{ inputs.images }}
+        INPUT_FROM: ${{ inputs.from }}
+        INPUT_TO: ${{ inputs.to }}
+      run: bash "$ACTION_PATH/../../scripts/pin.sh"

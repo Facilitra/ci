@@ -1,0 +1,41 @@
+name: Release gate
+description: Tag-driven release safety. Passes only when the tag is a semver tag, the version files match it, the tagged commit is on the branch and the CI workflow passed on that exact commit. Needs the tagged commit checked out and node on the PATH.
+
+inputs:
+  tag:
+    description: The tag being released, for example v1.2.3.
+    required: true
+  version-files:
+    description: "Files whose version must equal the tag without the v, one path[:jsonpath] per line, for example package.json:version or manifest.json:version. A path alone reads version."
+    required: false
+    default: package.json:version
+  ci-workflow:
+    description: Workflow file whose push run on the tagged commit must pass.
+    required: false
+    default: ci.yml
+  branch:
+    description: Branch the tagged commit must be on. Empty means the default branch.
+    required: false
+    default: ""
+  wait-seconds:
+    description: How long to wait for the CI run to appear.
+    required: false
+    default: "600"
+  token:
+    description: Token with contents read and actions read, normally the workflow token.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Gate release
+      shell: bash
+      env:
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_VERSION_FILES: ${{ inputs.version-files }}
+        INPUT_CI_WORKFLOW: ${{ inputs.ci-workflow }}
+        INPUT_BRANCH: ${{ inputs.branch }}
+        INPUT_WAIT_SECONDS: ${{ inputs.wait-seconds }}
+        INPUT_TOKEN: ${{ inputs.token }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/../../scripts/release-gate.sh"

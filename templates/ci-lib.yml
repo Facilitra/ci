@@ -1,0 +1,53 @@
+# CI for a library: copy to .github/workflows/ci.yml. Same as the service template, plus
+# a push run on the default branch, because release-gate only accepts a release when a
+# push run of this workflow passed on the tagged commit. Hosted runners only.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [<default-branch>]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/gate
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Facilitra/ci/actions/osv-scan@FACILITRA_CI_SHA # v1.0.0
+
+  ci:
+    if: always()
+    needs: [quality, audit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every job must have passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*)
+              echo "::error::job results: $RESULTS"
+              exit 1
+              ;;
+          esac

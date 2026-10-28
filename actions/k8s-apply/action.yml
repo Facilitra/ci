@@ -1,0 +1,25 @@
+name: k8s-apply
+description: Apply manifests after a server-side dry run, refuse Secrets and record the applied workloads for k8s-rollout. One call is one validation group, so objects that need an earlier one (a Namespace, a CRD) belong in an earlier call.
+inputs:
+  paths:
+    description: Files or directories, one per line. Directories apply one level deep, in sorted order.
+    required: true
+  exclude:
+    description: Globs of files to leave out, one per line. Matched against the listed path or the file name.
+    required: false
+    default: ''
+  dry-run-first:
+    description: Run kubectl apply --dry-run=server on the whole set before applying.
+    required: false
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - name: Apply manifests
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_EXCLUDE: ${{ inputs.exclude }}
+        INPUT_DRY_RUN_FIRST: ${{ inputs.dry-run-first }}
+      run: bash "$ACTION_PATH/../../scripts/apply.sh"

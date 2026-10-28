@@ -1,0 +1,51 @@
+name: OSV scan
+description: The dependency gate. Scans lockfiles against OSV with the pinned scanner and fails the job on any known advisory, or when the scanner cannot run. Needs a Linux runner with Docker.
+
+inputs:
+  lockfiles:
+    description: "Lockfiles to scan relative to working-directory, one per line. Empty autodetects pnpm-lock.yaml, package-lock.json, composer.lock, Cargo.lock and pubspec.lock at the root; lockfiles in subdirectories must be listed."
+    required: false
+    default: ""
+  working-directory:
+    description: Directory the lockfile paths are relative to.
+    required: false
+    default: .
+  fail:
+    description: "'true' fails on findings. 'false' only warns; the calling workflow must justify it with a same-line # expires: YYYY-MM-DD comment."
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve lockfiles
+      id: resolve
+      shell: bash
+      env:
+        INPUT_LOCKFILES: ${{ inputs.lockfiles }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_FAIL: ${{ inputs.fail }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/../../scripts/osv-lockfiles.sh"
+
+    - name: Check osv-scanner.toml
+      shell: bash
+      env:
+        INPUT_LOCKFILES: ${{ steps.resolve.outputs.files }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/../../scripts/check-osv-toml.sh"
+
+    # The scanner must be v2.7.0 or newer.
+    - name: Scan
+      id: scan
+      if: steps.resolve.outputs.found == 'true'
+      continue-on-error: ${{ inputs.fail == 'false' }}
+      uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+      with:
+        scan-args: ${{ steps.resolve.outputs.scan-args }}
+
+    - name: Report only
+      if: steps.scan.outcome == 'failure'
+      shell: bash
+      run: echo "::warning::osv-scan found issues or could not run, continuing because fail is false"

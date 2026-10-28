@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: web-migrate
+  namespace: example
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: reg.example.com/example/web-migrate:latest
+          imagePullPolicy: Always
+          command: ["./migrate"]

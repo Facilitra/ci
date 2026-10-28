@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multi-db
+  namespace: example-multi
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: multi-db
+  template:
+    metadata:
+      labels:
+        app: multi-db
+    spec:
+      containers:
+        - name: db
+          image: registry.example.com/mirror/db:1.0

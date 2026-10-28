@@ -1,0 +1,33 @@
+name: k8s-job
+description: Run a one-off Job to completion, failing on Failed as well as on timeout, with logs in the same step.
+inputs:
+  namespace:
+    description: Namespace of the Job.
+    required: true
+  manifest:
+    description: Path of the Job manifest.
+    required: true
+  name:
+    description: Name of the Job in that manifest.
+    required: true
+  timeout:
+    description: Seconds to wait for the Job to finish.
+    required: false
+    default: '300'
+  delete-first:
+    description: Delete the Job before applying, because a Job spec is immutable.
+    required: false
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - name: Run job
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_NAMESPACE: ${{ inputs.namespace }}
+        INPUT_MANIFEST: ${{ inputs.manifest }}
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_DELETE_FIRST: ${{ inputs.delete-first }}
+      run: bash "$ACTION_PATH/../../scripts/job.sh"

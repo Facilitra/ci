@@ -1,0 +1,113 @@
+# Dev deploy: copy to .github/workflows/deploy-dev.yml next to deploy.yml. Same graph as
+# production; it differs in the branch (develop), the environment, the dev- tag prefix,
+# the dev cache, and a build that may be cancelled by a newer push. Placeholders as in
+# deploy.yml.
+name: Deploy Dev
+
+on:
+  push:
+    branches: [develop]
+    paths-ignore: ['*.md', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ref: ${{ steps.guard.outputs.ref }}
+      tag: ${{ steps.guard.outputs.tag }}
+    steps:
+      - id: guard
+        uses: Facilitra/ci/actions/deploy-guard@FACILITRA_CI_SHA # v1.0.0
+        with:
+          branches: develop
+          tag-prefix: dev-
+
+  quality:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.guard.outputs.ref }}
+          persist-credentials: false
+      - uses: ./.github/actions/gate
+
+  audit:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.guard.outputs.ref }}
+          persist-credentials: false
+      - uses: Facilitra/ci/actions/osv-scan@FACILITRA_CI_SHA # v1.0.0
+
+  build:
+    needs: [guard, quality, audit]
+    runs-on: <runner-label>
+    timeout-minutes: 45
+    environment: dev
+    concurrency:
+      group: build-<app>-dev
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.guard.outputs.ref }}
+          persist-credentials: false
+      - uses: Facilitra/ci/actions/harbor-build@FACILITRA_CI_SHA # v1.0.0
+        with:
+          registry: ${{ vars.REGISTRY_HOST }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+          tag: ${{ needs.guard.outputs.tag }}
+          revision: ${{ needs.guard.outputs.ref }}
+          floating-tag: dev-latest
+          cache-ref: <project>/buildcache-dev
+          cache-from: <project>/buildcache
+          images: |
+            <project>/<app>
+            <project>/<app>-migrate
+
+  deploy:
+    needs: [guard, build]
+    runs-on: <runner-label>
+    timeout-minutes: 20
+    environment: dev
+    concurrency:
+      group: deploy-<app>-dev
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.guard.outputs.ref }}
+          persist-credentials: false
+      - uses: Facilitra/ci/actions/k8s-setup@FACILITRA_CI_SHA # v1.0.0
+        with:
+          kubectl-version: <kubectl-version>
+          kubectl-sha256: <kubectl-sha256>
+      - uses: Facilitra/ci/actions/k8s-pin@FACILITRA_CI_SHA # v1.0.0
+        with:
+          files: |
+            k8s/dev
+          images: |
+            <project>/<app>
+            <project>/<app>-migrate
+          from: dev-latest
+          to: ${{ needs.guard.outputs.tag }}
+      - uses: Facilitra/ci/actions/k8s-apply@FACILITRA_CI_SHA # v1.0.0
+        with:
+          paths: |
+            k8s/dev
+      - uses: Facilitra/ci/actions/k8s-rollout@FACILITRA_CI_SHA # v1.0.0
+        with:
+          namespace: <namespace>-dev
+      - name: Post-deploy checks
+        run: bash scripts/ci/post-deploy.sh

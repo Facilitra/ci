@@ -1,0 +1,58 @@
+# Release of a library, triggered by a semver tag: copy to .github/workflows/release.yml.
+# `build` only reads the repository; the one job that can write (`release`) runs no
+# dependency code, it only publishes what `build` produced. A library without a build
+# step can drop the artifact hand-over and release from `build`'s checkout instead.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Facilitra/ci/actions/release-gate@FACILITRA_CI_SHA # v1.0.0
+        with:
+          tag: ${{ github.ref_name }}
+          version-files: package.json:version
+          token: ${{ github.token }}
+      - uses: Facilitra/ci/actions/node-setup@FACILITRA_CI_SHA # v1.0.0
+      - name: Build
+        run: pnpm run build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: dist
+          path: dist/
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes
+          gh release upload "$TAG" dist/* --clobber

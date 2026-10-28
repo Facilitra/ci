@@ -1,0 +1,8 @@
+# Plain values only; this is not a kind: Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: example
+data:
+  LOG_LEVEL: info

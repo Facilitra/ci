@@ -1,0 +1,50 @@
+name: k8s-rollout
+description: Wait in parallel for the workloads k8s-apply recorded, under one deadline, with diagnostics on failure.
+inputs:
+  namespace:
+    description: Namespace of the workloads.
+    required: true
+  timeout:
+    description: Per-workload kubectl rollout status timeout.
+    required: false
+    default: 300s
+  timeouts:
+    description: Per-workload overrides, one name=Ns per line.
+    required: false
+    default: ''
+  extra:
+    description: Workloads to wait on that apply did not touch, one kind/name per line.
+    required: false
+    default: ''
+  skip:
+    description: Workloads not to wait on, one per line.
+    required: false
+    default: ''
+  optional:
+    description: Workloads whose failure is only a warning, one per line.
+    required: false
+    default: ''
+  deadline:
+    description: Overall seconds for all waits together.
+    required: false
+    default: '900'
+  diagnose:
+    description: Print pods, describe, logs (including init containers and previous instances) and events when a wait fails.
+    required: false
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - name: Wait for rollouts
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_NAMESPACE: ${{ inputs.namespace }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_TIMEOUTS: ${{ inputs.timeouts }}
+        INPUT_EXTRA: ${{ inputs.extra }}
+        INPUT_SKIP: ${{ inputs.skip }}
+        INPUT_OPTIONAL: ${{ inputs.optional }}
+        INPUT_DEADLINE: ${{ inputs.deadline }}
+        INPUT_DIAGNOSE: ${{ inputs.diagnose }}
+      run: bash "$ACTION_PATH/../../scripts/rollout.sh"

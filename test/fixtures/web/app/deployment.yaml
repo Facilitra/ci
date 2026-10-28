@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: example
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      initContainers:
+        - name: migrate
+          image: reg.example.com/example/web-migrate:latest   # runs before the app starts
+          imagePullPolicy: Always
+          command: ["./migrate"]
+      containers:
+        - name: web
+          image: "reg.example.com/example/web:latest"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080

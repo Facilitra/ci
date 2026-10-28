@@ -1,0 +1,84 @@
+name: Node setup
+description: Install Node and the package manager from the versions the repo declares, check that .nvmrc, packageManager and the Dockerfiles agree, then run a frozen install. For hosted runners.
+
+inputs:
+  package-manager:
+    description: "auto, pnpm, npm or none. auto picks pnpm when pnpm-lock.yaml exists, npm when package-lock.json exists, else none (no cache, no install). pnpm needs packageManager in package.json."
+    required: false
+    default: auto
+  node-version-file:
+    description: File holding the Node version, an exact patch for services, a major is fine for libraries.
+    required: false
+    default: .nvmrc
+  working-directory:
+    description: Directory holding package.json, the lockfile and the version file.
+    required: false
+    default: .
+  install:
+    description: "'true' runs a frozen install (pnpm install --frozen-lockfile, npm ci), 'false' only sets up the toolchain."
+    required: false
+    default: "true"
+  check-versions:
+    description: "'true' fails when the version file, packageManager and the Dockerfiles disagree."
+    required: false
+    default: "true"
+  dockerfiles:
+    description: Space separated Dockerfile paths relative to working-directory; ones that do not exist are skipped.
+    required: false
+    default: Dockerfile .docker/Dockerfile
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve package manager
+      id: pm
+      shell: bash
+      env:
+        INPUT_PACKAGE_MANAGER: ${{ inputs.package-manager }}
+        INPUT_NODE_VERSION_FILE: ${{ inputs.node-version-file }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_INSTALL: ${{ inputs.install }}
+        INPUT_CHECK_VERSIONS: ${{ inputs.check-versions }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/../../scripts/resolve-pm.sh"
+
+    - name: Check Node and pnpm versions agree
+      if: inputs.check-versions == 'true'
+      shell: bash
+      env:
+        INPUT_NODE_VERSION_FILE: ${{ inputs.node-version-file }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_DOCKERFILES: ${{ inputs.dockerfiles }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/../../scripts/check-versions.sh"
+
+    # No version input: the action reads packageManager from package.json.
+    - name: Set up pnpm
+      if: steps.pm.outputs.pm == 'pnpm'
+      uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      with:
+        package_json_file: ${{ steps.pm.outputs.package-json }}
+
+    - name: Set up Node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: ${{ steps.pm.outputs.version-file }}
+        cache: ${{ steps.pm.outputs.cache }}
+        cache-dependency-path: ${{ steps.pm.outputs.lockfile }}
+        package-manager-cache: "false"
+
+    - name: Install dependencies
+      if: inputs.install == 'true' && steps.pm.outputs.pm != 'none'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PM: ${{ steps.pm.outputs.pm }}
+      run: |
+        set -euo pipefail
+        if [[ "$PM" == pnpm ]]; then
+          pnpm install --frozen-lockfile
+        elif [[ -f package-lock.json ]]; then
+          npm ci
+        else
+          npm install --no-audit --no-fund
+        fi

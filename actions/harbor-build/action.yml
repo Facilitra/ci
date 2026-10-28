@@ -1,0 +1,115 @@
+name: harbor-build
+description: Log in to a container registry and build and push one or more images with docker buildx, tagged with the commit's short sha, with a registry build cache, an optional BuildKit secret, the OCI revision label and a hang watchdog.
+inputs:
+  registry:
+    description: Registry hostname[:port], lowercase, no scheme and no path. Fails before any login when empty or malformed.
+    required: true
+  username:
+    description: Registry username.
+    required: true
+  password:
+    description: Registry password.
+    required: true
+  tag:
+    description: Immutable image tag from deploy-guard, matching ^(dev-)?[0-9a-f]{7}$. Must be the first 7 characters of revision (after the optional dev- prefix).
+    required: true
+  revision:
+    description: Full sha of the commit being built (deploy-guard ref). Written to the org.opencontainers.image.revision label.
+    required: true
+  images:
+    description: |
+      One image per line: "<path> [target=<t>] [file=<f>] [cache=<ref>] [watchdog=<seconds>]". <path> is a repository path without the registry host (example-app/app). The first line is the primary image: it is built first, in the foreground, and it alone receives build-args and the BuildKit secret and writes the registry cache. The other images then build in parallel and only read the cache. cache=<ref> gives an image its own read+write cache (cache=none turns the registry cache off for it); watchdog=<seconds> overrides its hang deadline (0 disables).
+    required: true
+  build-args:
+    description: KEY=VALUE lines passed to the primary image as --build-arg. Values may contain spaces and quotes. Never put secrets here.
+    required: false
+    default: ''
+  build-secret-id:
+    description: BuildKit secret id (readable in the Dockerfile with RUN --mount=type=secret,id=<id>). Empty = no secret.
+    required: false
+    default: ''
+  build-secret-value:
+    description: Value of the BuildKit secret. Passed through an environment variable, never as a build-arg or on a command line. An empty value is still mounted.
+    required: false
+    default: ''
+  file:
+    description: Dockerfile used by images without file=, relative to the repository root (docker resolves --file against the working directory, not against context).
+    required: false
+    default: Dockerfile
+  context:
+    description: Build context directory.
+    required: false
+    default: .
+  floating-tag:
+    description: Optional extra tag pushed next to the immutable one (the pipeline never reads it). latest, dev-latest, or none for no extra tag. latest needs a plain tag and dev-latest needs a dev- tag.
+    required: false
+    default: latest
+  cache-ref:
+    description: Registry cache the primary image reads and writes, as a repository path without host. Empty = <project>/buildcache where project is the first path segment of the primary image. Dev builds pass <project>/buildcache-dev. none disables the registry cache.
+    required: false
+    default: ''
+  cache-from:
+    description: Extra read-only cache refs, one per line (dev builds pass <project>/buildcache).
+    required: false
+    default: ''
+  watchdog-seconds:
+    description: Seconds before a build that is still running is diagnosed and killed. Applies to the primary image; the others get min(900, this value). 0 disables.
+    required: false
+    default: '1500'
+outputs:
+  primary-image:
+    description: Full reference of the primary image, <registry>/<path>:<tag>.
+    value: ${{ steps.build.outputs.primary-image }}
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_REGISTRY: ${{ inputs.registry }}
+        INPUT_USERNAME: ${{ inputs.username }}
+        INPUT_PASSWORD: ${{ inputs.password }}
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_REVISION: ${{ inputs.revision }}
+        INPUT_IMAGES: ${{ inputs.images }}
+        INPUT_BUILD_ARGS: ${{ inputs.build-args }}
+        INPUT_BUILD_SECRET_ID: ${{ inputs.build-secret-id }}
+        INPUT_BUILD_SECRET_VALUE: ${{ inputs.build-secret-value }}
+        INPUT_FILE: ${{ inputs.file }}
+        INPUT_CONTEXT: ${{ inputs.context }}
+        INPUT_FLOATING_TAG: ${{ inputs.floating-tag }}
+        INPUT_CACHE_REF: ${{ inputs.cache-ref }}
+        INPUT_CACHE_FROM: ${{ inputs.cache-from }}
+        INPUT_WATCHDOG_SECONDS: ${{ inputs.watchdog-seconds }}
+      run: bash "$ACTION_PATH/../../scripts/build.sh" validate
+
+    - name: Log in to the registry
+      uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+    - name: Build and push
+      id: build
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_REGISTRY: ${{ inputs.registry }}
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_REVISION: ${{ inputs.revision }}
+        INPUT_IMAGES: ${{ inputs.images }}
+        INPUT_BUILD_ARGS: ${{ inputs.build-args }}
+        INPUT_BUILD_SECRET_ID: ${{ inputs.build-secret-id }}
+        INPUT_BUILD_SECRET_VALUE: ${{ inputs.build-secret-value }}
+        INPUT_FILE: ${{ inputs.file }}
+        INPUT_CONTEXT: ${{ inputs.context }}
+        INPUT_FLOATING_TAG: ${{ inputs.floating-tag }}
+        INPUT_CACHE_REF: ${{ inputs.cache-ref }}
+        INPUT_CACHE_FROM: ${{ inputs.cache-from }}
+        INPUT_WATCHDOG_SECONDS: ${{ inputs.watchdog-seconds }}
+      run: bash "$ACTION_PATH/../../scripts/build.sh"

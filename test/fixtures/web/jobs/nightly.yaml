@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: web-nightly
+  namespace: example
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: ping
+              image: registry.example.com/mirror/tool:2.0
+              args: ["-fsS", "http://web.example.svc/nightly"]
